@@ -9,6 +9,7 @@ export interface Clip {
   gain: number; // 0–10, 1 = original
   speed: number; // 0.5–2, pitch preserved
   pitch: number; // semitones, −12…+12, tempo preserved
+  muted: boolean;
   color: string;
 }
 

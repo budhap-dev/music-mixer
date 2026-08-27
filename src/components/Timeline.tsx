@@ -7,6 +7,8 @@ import Lane from "./Lane";
 interface Props {
   clips: Clip[];
   dispatch: React.Dispatch<Action>;
+  position: number;
+  onSeek: (t: number) => void;
 }
 
 function rulerStep(pps: number): number {
@@ -15,7 +17,7 @@ function rulerStep(pps: number): number {
   return 600;
 }
 
-export default function Timeline({ clips, dispatch }: Props) {
+export default function Timeline({ clips, dispatch, position, onSeek }: Props) {
   const [pps, setPps] = useState(3); // pixels per second (zoom)
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -50,9 +52,18 @@ export default function Timeline({ clips, dispatch }: Props) {
             setZoom(pps * (e.deltaY < 0 ? 1.15 : 1 / 1.15));
           }}
         >
+          <div className="scroll-inner">
           <div className="lane-row">
             <div className="ruler-spacer" />
-            <div className="ruler" style={{ width }}>
+            <div
+              className="ruler"
+              style={{ width }}
+              title="Click to seek"
+              onClick={(e) => {
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                onSeek((e.clientX - rect.left) / pps);
+              }}
+            >
               {ticks.map((t) => (
                 <div key={t} className="tick" style={{ left: t * pps }}>{fmtTick(t)}</div>
               ))}
@@ -68,8 +79,11 @@ export default function Timeline({ clips, dispatch }: Props) {
               width={width}
               gridPx={step * pps}
               dispatch={dispatch}
+              onSeek={onSeek}
             />
           ))}
+          <div className="playhead" style={{ left: `calc(19rem + ${position * pps}px)` }} />
+          </div>
         </div>
       </div>
     </>

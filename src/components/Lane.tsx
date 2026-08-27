@@ -12,9 +12,10 @@ interface Props {
   width: number;
   gridPx: number;
   dispatch: React.Dispatch<Action>;
+  onSeek: (t: number) => void;
 }
 
-export default function Lane({ clip, index, count, pps, width, gridPx, dispatch }: Props) {
+export default function Lane({ clip, index, count, pps, width, gridPx, dispatch, onSeek }: Props) {
   const update = (patch: Partial<Clip>) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch });
   const len = clipLength(clip);
 
@@ -69,6 +70,11 @@ export default function Lane({ clip, index, count, pps, width, gridPx, dispatch 
             spellCheck={false}
             onChange={(e) => update({ name: e.target.value })}
           />
+          <button
+            className={`mute ${clip.muted ? "on" : ""}`}
+            title={clip.muted ? "Unmute" : "Mute this track"}
+            onClick={() => update({ muted: !clip.muted })}
+          >M</button>
           <button className="mv" disabled={index === 0} title="Move up"
             onClick={() => dispatch({ type: "MOVE_CLIP", id: clip.id, dir: -1 })}>▲</button>
           <button className="mv" disabled={index === count - 1} title="Move down"
@@ -99,9 +105,17 @@ export default function Lane({ clip, index, count, pps, width, gridPx, dispatch 
           </label>
         </div>
       </div>
-      <div className="lane" style={{ width, backgroundSize: `${gridPx}px 100%` }}>
+      <div
+        className="lane"
+        style={{ width, backgroundSize: `${gridPx}px 100%` }}
+        onClick={(e) => {
+          if (e.target !== e.currentTarget) return; // blocks handle their own events
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          onSeek((e.clientX - rect.left) / pps);
+        }}
+      >
         <div
-          className="block"
+          className={`block ${clip.muted ? "muted" : ""}`}
           style={{
             left: clip.offset * pps,
             width: Math.max(len * pps, 24),

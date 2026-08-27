@@ -42,6 +42,7 @@ export function reducer(state: ProjectState, action: Action): ProjectState {
         gain: 1,
         speed: 1,
         pitch: 0,
+        muted: false,
         color: PALETTE[state.clips.length % PALETTE.length],
       };
       return { ...state, clips: [...state.clips, clip] };

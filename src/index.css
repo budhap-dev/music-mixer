@@ -172,3 +172,22 @@ button:disabled { opacity: 0.5; cursor: default; }
 .master input[type="checkbox"] { accent-color: var(--accent); }
 .mix-controls { display: flex; gap: 0.5rem; margin-top: 0.8rem; flex-wrap: wrap; align-items: center; }
 .mix-controls input { flex: 1; min-width: 10rem; }
+
+/* transport + playhead + mute */
+.transport { display: flex; gap: 0.5rem; align-items: center; }
+.clock { font-variant-numeric: tabular-nums; font-weight: 600; }
+.scroll-inner { position: relative; width: fit-content; min-width: 100%; }
+.playhead {
+  position: absolute; top: 0; bottom: 0; width: 2px;
+  background: var(--text);
+  pointer-events: none;
+  z-index: 2;
+}
+.lane-head .mute {
+  background: none; border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text); opacity: 0.55; cursor: pointer;
+  padding: 0 0.3rem; font-size: 0.7rem;
+}
+.lane-head .mute.on { opacity: 1; border-color: #dc2626; color: #dc2626; }
+.block.muted { opacity: 0.4; }
+.ruler { cursor: pointer; }
