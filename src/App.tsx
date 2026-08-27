@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { Engine } from "./audio/engine";
+import { exportMp3 } from "./audio/export";
 import { importFile } from "./audio/files";
 import { initialState, reducer } from "./state";
 import { clamp, fmt, mixLength } from "./utils/time";
@@ -14,6 +15,7 @@ export default function App() {
   const engine = (engineRef.current ??= new Engine());
   const [playing, setPlaying] = useState(false);
   const [pos, setPos] = useState(0);
+  const [exportProgress, setExportProgress] = useState<number | null>(null);
 
   const total = mixLength(state.clips);
 
@@ -48,6 +50,19 @@ export default function App() {
     engine.stop();
     setPlaying(false);
     setPos(0);
+  };
+
+  const exportMix = async () => {
+    if (exportProgress !== null) return;
+    setExportProgress(0);
+    setStatus("");
+    try {
+      await exportMp3(state.clips, state.master, state.mixTitle, setExportProgress);
+    } catch {
+      setStatus("Export failed — try again.");
+    } finally {
+      setExportProgress(null);
+    }
   };
 
   const seek = (t: number) => {
@@ -137,8 +152,10 @@ export default function App() {
               value={state.mixTitle}
               onChange={(e) => dispatch({ type: "SET_TITLE", title: e.target.value })}
             />
-            <button disabled title="MP3 export lands in milestone 3 (see issue #1)">
-              Export mix (soon)
+            <button onClick={() => void exportMix()} disabled={exportProgress !== null}>
+              {exportProgress === null
+                ? "⬇ Export MP3"
+                : `Exporting… ${Math.round(exportProgress * 100)}%`}
             </button>
           </div>
         </>
