@@ -1,5 +1,5 @@
 import type { Clip, Master } from "../types";
-import { getBuffer } from "./files";
+import { buildMixGraph } from "./graph";
 
 /**
  * Live-preview engine: builds a Web Audio graph for the whole arrangement and
@@ -37,44 +37,11 @@ export class Engine {
     this.teardown();
     const T = Math.max(0, from ?? this.startPos);
 
-    // clips -> clipGain -> bass -> mid -> treble [-> enhance chain] -> speakers
-    const bass = new BiquadFilterNode(ctx, { type: "lowshelf", frequency: 100 });
-    const mid = new BiquadFilterNode(ctx, { type: "peaking", frequency: 1000, Q: 1 });
-    const treble = new BiquadFilterNode(ctx, { type: "highshelf", frequency: 3000 });
-    bass.connect(mid);
-    mid.connect(treble);
-    let tail: AudioNode = treble;
-    if (master.enhance) {
-      const highpass = new BiquadFilterNode(ctx, { type: "highpass", frequency: 60 });
-      const presence = new BiquadFilterNode(ctx, { type: "peaking", frequency: 3200, Q: 1, gain: 2 });
-      const comp = new DynamicsCompressorNode(ctx, {
-        threshold: -24, knee: 12, ratio: 3, attack: 0.02, release: 0.25,
-      });
-      tail.connect(highpass);
-      highpass.connect(presence);
-      presence.connect(comp);
-      tail = comp;
-    }
-    tail.connect(ctx.destination);
-    this.eq = { bass, mid, treble };
-    this.setMaster(master);
-
     const now = ctx.currentTime + 0.05; // scheduling headroom
-    for (const clip of clips) {
-      const buffer = getBuffer(clip.fileId);
-      if (!buffer) continue;
-      const endT = clip.offset + (clip.end - clip.start) / clip.speed;
-      if (T >= endT) continue;
-      const src = new AudioBufferSourceNode(ctx, { buffer, playbackRate: clip.speed });
-      const gain = new GainNode(ctx, { gain: clip.muted ? 0 : clip.gain });
-      src.connect(gain);
-      gain.connect(bass);
-      const when = now + Math.max(0, clip.offset - T);
-      const sourceOffset = clip.start + Math.max(0, T - clip.offset) * clip.speed;
-      src.start(when, sourceOffset, clip.end - sourceOffset);
-      this.active.push(src);
-      this.clipGains.set(clip.id, gain);
-    }
+    const graph = buildMixGraph(ctx, clips, master, T, now);
+    this.active = graph.sources;
+    this.clipGains = graph.clipGains;
+    this.eq = graph.eq;
     this.startPos = T;
     this.startedAt = now;
     this._playing = true;
