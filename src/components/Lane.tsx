@@ -1,7 +1,7 @@
 import type { Clip } from "../types";
 import type { Action } from "../state";
 import { textOn } from "../state";
-import { keyLabel, segmentAt, type KeySegment } from "../audio/key";
+import { keyLabel, NOTES, segmentAt, type KeySegment } from "../audio/key";
 import { clamp, clipLength, fmt, round1 } from "../utils/time";
 import TimeBox from "./TimeBox";
 
@@ -35,6 +35,17 @@ export default function Lane({ clip, index, count, pps, width, gridPx, dispatch,
   const keyTitle = inCut
     .map((s) => `${fmt(Math.max(s.start, clip.start))} ${keyLabel(s, clip.pitch)}`)
     .join(" → ");
+  const shownTonic = seg ? (((seg.tonic + clip.pitch) % 12) + 12) % 12 : 0;
+
+  /** Transpose the whole track so the key at the playhead becomes `target`. */
+  const setScale = (target: number) => {
+    let delta = (target - shownTonic + 12) % 12;
+    if (delta > 6) delta -= 12; // shift the shorter way
+    let pitch = clip.pitch + delta;
+    if (pitch > 12) pitch -= 12;
+    if (pitch < -12) pitch += 12;
+    update({ pitch });
+  };
 
   const startDrag = (e: React.PointerEvent, mode: "move" | "left" | "right") => {
     e.preventDefault();
@@ -93,10 +104,26 @@ export default function Lane({ clip, index, count, pps, width, gridPx, dispatch,
         <div className="row">
           {seg && (
             <span
-              className="key-badge"
-              title={`Key at the playhead${clip.pitch ? " (incl. pitch shift)" : ""}${inCut.length > 1 ? ` — changes: ${keyTitle}` : ""}`}
+              className="key-wrap"
+              title={`Key at the playhead${clip.pitch ? " (incl. pitch shift)" : ""}${inCut.length > 1 ? ` — changes: ${keyTitle}` : ""}. Pick a key to transpose the track (adjusts Pitch, formants preserved).`}
             >
-              ♪ {keyLabel(seg, clip.pitch)}{inCut.length > 1 ? " *" : ""}
+              <select
+                className="key-badge"
+                value={shownTonic}
+                onChange={(e) => setScale(Number(e.target.value))}
+              >
+                {NOTES.map((note, t) => {
+                  let d = (t - shownTonic + 12) % 12;
+                  if (d > 6) d -= 12;
+                  const mode = seg.mode === "major" ? "maj" : "min";
+                  return (
+                    <option key={note} value={t}>
+                      ♪ {note} {mode}{d ? ` (${d > 0 ? "+" : ""}${d})` : ""}
+                    </option>
+                  );
+                })}
+              </select>
+              {inCut.length > 1 ? "*" : ""}
             </span>
           )}
           <button
