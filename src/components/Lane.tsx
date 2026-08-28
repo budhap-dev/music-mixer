@@ -106,7 +106,7 @@ export default function Lane({ clip, index, count, pps, width, gridPx, dispatch,
             <input type="number" min={0.5} max={2} step={0.05} value={clip.speed}
               onChange={(e) => update({ speed: Number(e.target.value) || 1 })} />
           </label>
-          <label title="Pitch in semitones, −12…+12 (speed preserved)">Pitch
+          <label title="Pitch in semitones, −12…+12 (speed and vocal timbre preserved)">Pitch
             <input type="number" min={-12} max={12} step={1} value={clip.pitch}
               onChange={(e) => update({ pitch: Number(e.target.value) || 0 })} />
           </label>

@@ -2,6 +2,7 @@ import { useEffect, useReducer, useRef, useState } from "react";
 import { Engine } from "./audio/engine";
 import { exportMp3 } from "./audio/export";
 import { importFile } from "./audio/files";
+import { ensureProcessed, needsProcessing } from "./audio/process";
 import { historyReducer, initialHistory } from "./state";
 import { clamp, clipLength, fmt, mixLength } from "./utils/time";
 import MasterPanel from "./components/MasterPanel";
@@ -156,10 +157,36 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bass, mid, treble, engine]);
 
-  // structural edits (cuts, moves, speed, add/remove, enhance) rebuild mid-play
+  // formant-preserved speed/pitch renditions (Rubber Band, in a worker):
+  // debounce typing, then process; bump procTick so a playing graph rebuilds
+  // with the processed audio once it's ready
+  const [procTick, setProcTick] = useState(0);
+  const procSig = JSON.stringify(
+    state.clips.filter(needsProcessing).map((c) => [c.fileId, c.speed, c.pitch]),
+  );
+  useEffect(() => {
+    if (procSig === "[]") return;
+    let stale = false;
+    const t = setTimeout(() => {
+      setStatus("Rendering speed/pitch…");
+      ensureProcessed(state.clips, (v) => {
+        if (!stale) setStatus(`Rendering speed/pitch… ${Math.round(v * 100)}%`);
+      })
+        .then(() => {
+          if (stale) return;
+          setStatus("");
+          setProcTick((n) => n + 1);
+        })
+        .catch(() => { if (!stale) setStatus("Speed/pitch rendering failed."); });
+    }, 300);
+    return () => { stale = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [procSig]);
+
+  // structural edits (cuts, moves, speed/pitch, add/remove, enhance) rebuild mid-play
   const structSig =
-    JSON.stringify(state.clips.map((c) => [c.fileId, c.start, c.end, c.offset, c.speed])) +
-    state.master.enhance;
+    JSON.stringify(state.clips.map((c) => [c.fileId, c.start, c.end, c.offset, c.speed, c.pitch])) +
+    state.master.enhance + procTick;
   useEffect(() => {
     if (!engine.playing) return;
     const t = setTimeout(() => engine.play(audible(previewId), state.master, engine.position()), 150);
