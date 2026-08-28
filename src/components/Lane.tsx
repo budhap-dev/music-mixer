@@ -13,9 +13,11 @@ interface Props {
   gridPx: number;
   dispatch: React.Dispatch<Action>;
   onSeek: (t: number) => void;
+  previewing: boolean;
+  onPlayTrack: (id: number) => void;
 }
 
-export default function Lane({ clip, index, count, pps, width, gridPx, dispatch, onSeek }: Props) {
+export default function Lane({ clip, index, count, pps, width, gridPx, dispatch, onSeek, previewing, onPlayTrack }: Props) {
   const update = (patch: Partial<Clip>) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch });
   const len = clipLength(clip);
 
@@ -70,6 +72,11 @@ export default function Lane({ clip, index, count, pps, width, gridPx, dispatch,
             spellCheck={false}
             onChange={(e) => update({ name: e.target.value })}
           />
+          <button
+            className={`preview ${previewing ? "on" : ""}`}
+            title={previewing ? "Stop" : "Play this track alone"}
+            onClick={() => onPlayTrack(clip.id)}
+          >{previewing ? "⏹" : "▶"}</button>
           <button
             className={`mute ${clip.muted ? "on" : ""}`}
             title={clip.muted ? "Unmute" : "Mute this track"}
