@@ -1,6 +1,7 @@
 import type { Clip } from "../types";
 import type { Action } from "../state";
 import { textOn } from "../state";
+import { keyLabel, segmentAt, type KeySegment } from "../audio/key";
 import { clamp, clipLength, fmt, round1 } from "../utils/time";
 import TimeBox from "./TimeBox";
 
@@ -15,11 +16,25 @@ interface Props {
   onSeek: (t: number) => void;
   previewing: boolean;
   onPlayTrack: (id: number) => void;
+  keySegments?: KeySegment[];
+  position: number;
 }
 
-export default function Lane({ clip, index, count, pps, width, gridPx, dispatch, onSeek, previewing, onPlayTrack }: Props) {
+export default function Lane({ clip, index, count, pps, width, gridPx, dispatch, onSeek, previewing, onPlayTrack, keySegments, position }: Props) {
   const update = (patch: Partial<Clip>) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch });
   const len = clipLength(clip);
+
+  // Key at the playhead, mapped into source time and transposed by the pitch
+  // shift; a "*" marks files whose cut spans a key change (modulation).
+  const srcT = clamp(clip.start + (position - clip.offset) * clip.speed, clip.start, clip.end);
+  const seg = keySegments?.length ? segmentAt(keySegments, srcT) : undefined;
+  const inCut = keySegments?.filter((s, i) => {
+    const end = keySegments[i + 1]?.start ?? Infinity;
+    return end > clip.start && s.start < clip.end;
+  }) ?? [];
+  const keyTitle = inCut
+    .map((s) => `${fmt(Math.max(s.start, clip.start))} ${keyLabel(s, clip.pitch)}`)
+    .join(" → ");
 
   const startDrag = (e: React.PointerEvent, mode: "move" | "left" | "right") => {
     e.preventDefault();
@@ -72,6 +87,18 @@ export default function Lane({ clip, index, count, pps, width, gridPx, dispatch,
             spellCheck={false}
             onChange={(e) => update({ name: e.target.value })}
           />
+          <button className="remove" title="Remove"
+            onClick={() => dispatch({ type: "REMOVE_CLIP", id: clip.id })}>✕</button>
+        </div>
+        <div className="row">
+          {seg && (
+            <span
+              className="key-badge"
+              title={`Key at the playhead${clip.pitch ? " (incl. pitch shift)" : ""}${inCut.length > 1 ? ` — changes: ${keyTitle}` : ""}`}
+            >
+              ♪ {keyLabel(seg, clip.pitch)}{inCut.length > 1 ? " *" : ""}
+            </span>
+          )}
           <button
             className={`preview ${previewing ? "on" : ""}`}
             title={previewing ? "Stop" : "Play this track alone"}
@@ -86,8 +113,6 @@ export default function Lane({ clip, index, count, pps, width, gridPx, dispatch,
             onClick={() => dispatch({ type: "MOVE_CLIP", id: clip.id, dir: -1 })}>▲</button>
           <button className="mv" disabled={index === count - 1} title="Move down"
             onClick={() => dispatch({ type: "MOVE_CLIP", id: clip.id, dir: 1 })}>▼</button>
-          <button className="remove" title="Remove"
-            onClick={() => dispatch({ type: "REMOVE_CLIP", id: clip.id })}>✕</button>
         </div>
         <div className="row ctl">
           <TimeBox label="From" title="Cut from — where in the source the clip starts"
@@ -129,7 +154,7 @@ export default function Lane({ clip, index, count, pps, width, gridPx, dispatch,
             background: clip.color,
             color: textOn(clip.color),
           }}
-          title={`Plays ${fmt(clip.offset)}–${fmt(clip.offset + len)} · cut ${fmt(clip.start)}–${fmt(clip.end)} of ${clip.name}`}
+          title={`Plays ${fmt(clip.offset)}–${fmt(clip.offset + len)} · cut ${fmt(clip.start)}–${fmt(clip.end)} of ${clip.name}${keyTitle ? `\nKey${clip.pitch ? " (incl. pitch shift)" : ""}: ${keyTitle}` : ""}`}
           onPointerDown={(e) => startDrag(e, "move")}
         >
           <div className="handle left" onPointerDown={(e) => startDrag(e, "left")} />

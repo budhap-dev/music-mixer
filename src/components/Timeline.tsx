@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import type { Clip } from "../types";
 import type { Action } from "../state";
+import type { KeySegment } from "../audio/key";
 import { clamp, fmt, fmtTick, mixLength } from "../utils/time";
 import Lane from "./Lane";
 
@@ -11,6 +12,7 @@ interface Props {
   onSeek: (t: number) => void;
   previewId: number | null;
   onPlayTrack: (id: number) => void;
+  keys: Record<string, KeySegment[]>;
 }
 
 function rulerStep(pps: number): number {
@@ -19,7 +21,7 @@ function rulerStep(pps: number): number {
   return 600;
 }
 
-export default function Timeline({ clips, dispatch, position, onSeek, previewId, onPlayTrack }: Props) {
+export default function Timeline({ clips, dispatch, position, onSeek, previewId, onPlayTrack, keys }: Props) {
   const [pps, setPps] = useState(3); // pixels per second (zoom)
   const [scrub, setScrub] = useState<number | null>(null); // playhead while dragging
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -108,11 +110,13 @@ export default function Timeline({ clips, dispatch, position, onSeek, previewId,
               onSeek={onSeek}
               previewing={previewId === clip.id}
               onPlayTrack={onPlayTrack}
+              keySegments={keys[clip.fileId]}
+              position={scrub ?? position}
             />
           ))}
           <div
             className={`playhead ${scrub !== null ? "scrubbing" : ""}`}
-            style={{ left: `calc(19rem + ${(scrub ?? position) * pps}px)` }}
+            style={{ left: `calc(21rem + ${(scrub ?? position) * pps}px)` }}
           >
             <div className="ph-line" />
             <div className="ph-grab" title="Drag to seek" onPointerDown={startScrub}>

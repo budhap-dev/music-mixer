@@ -2,6 +2,7 @@ import { useEffect, useReducer, useRef, useState } from "react";
 import { Engine } from "./audio/engine";
 import { exportMp3 } from "./audio/export";
 import { importFile } from "./audio/files";
+import { detectKey, type KeySegment } from "./audio/key";
 import { ensureProcessed, needsProcessing } from "./audio/process";
 import { historyReducer, initialHistory } from "./state";
 import { clamp, clipLength, fmt, mixLength } from "./utils/time";
@@ -22,6 +23,9 @@ export default function App() {
   const [preview, setPreview] = useState<{ id: number; from: number } | null>(null);
   const previewId = preview?.id ?? null;
   const [exportProgress, setExportProgress] = useState<number | null>(null);
+  const [renderProgress, setRenderProgress] = useState<number | null>(null);
+  // detected key timeline per source file (shown per lane, follows playhead)
+  const [keys, setKeys] = useState<Record<string, KeySegment[]>>({});
 
   const total = mixLength(state.clips);
   const previewClip = preview === null ? undefined : state.clips.find((c) => c.id === preview.id);
@@ -109,6 +113,16 @@ export default function App() {
     setPos(target);
   };
 
+  // detect each imported file's key timeline once, off the main thread
+  const fileIds = JSON.stringify([...new Set(state.clips.map((c) => c.fileId))]);
+  useEffect(() => {
+    for (const fileId of JSON.parse(fileIds) as string[]) {
+      detectKey(fileId)
+        .then((segments) => setKeys((k) => (k[fileId] ? k : { ...k, [fileId]: segments })))
+        .catch(() => {}); // no key shown for this file
+    }
+  }, [fileIds]);
+
   // ⌘Z / Ctrl+Z undo, ⇧⌘Z / Ctrl+Shift+Z redo — text fields keep native undo
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -168,20 +182,30 @@ export default function App() {
     if (procSig === "[]") return;
     let stale = false;
     const t = setTimeout(() => {
-      setStatus("Rendering speed/pitch…");
-      ensureProcessed(state.clips, (v) => {
-        if (!stale) setStatus(`Rendering speed/pitch… ${Math.round(v * 100)}%`);
-      })
+      setRenderProgress(0);
+      ensureProcessed(state.clips, (v) => { if (!stale) setRenderProgress(v); })
         .then(() => {
           if (stale) return;
-          setStatus("");
+          setRenderProgress(null);
+          setStatus("✓ Speed/pitch rendering complete");
           setProcTick((n) => n + 1);
         })
-        .catch(() => { if (!stale) setStatus("Speed/pitch rendering failed."); });
+        .catch(() => {
+          if (stale) return;
+          setRenderProgress(null);
+          setStatus("Speed/pitch rendering failed.");
+        });
     }, 300);
-    return () => { stale = true; clearTimeout(t); };
+    return () => { stale = true; clearTimeout(t); setRenderProgress(null); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [procSig]);
+
+  // the "✓ …complete" note lingers briefly, then clears itself
+  useEffect(() => {
+    if (!status.startsWith("✓")) return;
+    const t = setTimeout(() => setStatus(""), 4000);
+    return () => clearTimeout(t);
+  }, [status]);
 
   // structural edits (cuts, moves, speed/pitch, add/remove, enhance) rebuild mid-play
   const structSig =
@@ -224,13 +248,21 @@ export default function App() {
             title="Redo (⇧⌘Z / Ctrl+Shift+Z)" onClick={() => dispatch({ type: "REDO" })}>↪ Redo</button>
         </div>
       </div>
-      <div className="status">{status}</div>
+      <div className={`status ${status.startsWith("✓") ? "ok" : ""}`}>
+        {renderProgress !== null ? (
+          <span className="render-progress">
+            Rendering speed/pitch…
+            <span className="pbar"><span className="pfill" style={{ width: `${Math.round(renderProgress * 100)}%` }} /></span>
+            {Math.round(renderProgress * 100)}%
+          </span>
+        ) : status}
+      </div>
       {state.clips.length === 0 ? (
         <div className="hint">Nothing on the timeline yet — open one or more audio files to start cutting.</div>
       ) : (
         <>
           <Timeline clips={state.clips} dispatch={dispatch} position={pos} onSeek={seek}
-            previewId={playing ? previewId : null} onPlayTrack={playTrack} />
+            previewId={playing ? previewId : null} onPlayTrack={playTrack} keys={keys} />
           <MasterPanel master={state.master} dispatch={dispatch} />
           <div className="mix-controls">
             <input
