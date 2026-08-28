@@ -25,8 +25,8 @@ export function parseTime(str: string): number | null {
   return parts.reduce((acc, p) => acc * 60 + p, 0);
 }
 
-/** Seconds a clip occupies on the output timeline (cut length ÷ speed). */
-export const clipLength = (c: Clip) => (c.end - c.start) / c.speed;
+/** Seconds a clip occupies on the output timeline (cut length ÷ speed × loops). */
+export const clipLength = (c: Clip) => ((c.end - c.start) / c.speed) * (c.loop ?? 1);
 
 export const mixLength = (clips: Clip[]) =>
   clips.length ? Math.max(...clips.map((c) => c.offset + clipLength(c))) : 0;

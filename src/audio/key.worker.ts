@@ -94,19 +94,24 @@ self.onmessage = (e: MessageEvent<KeyRequest>) => {
   const re = new Float32Array(N);
   const im = new Float32Array(N);
   const windowLen = WINDOW_S * sampleRate;
-  const windowKeys: ({ tonic: number; mode: "major" | "minor" } | null)[] = [];
 
+  // Pass 1: per-window chroma at 0.1-semitone resolution (120 bins), so a
+  // detuned or off-speed file (common with re-encoded rips) can be tuning-
+  // compensated before pitch classes are assigned.
+  const FINE = 120;
+  const windows: { fine: Float64Array; energy: number }[] = [];
+  const frameFine = new Float64Array(FINE);
   for (let w = 0; w * windowLen < samples.length; w++) {
     const from = Math.floor(w * windowLen);
     const to = Math.min(samples.length, from + windowLen);
-    const chroma = new Array<number>(12).fill(0);
+    const fine = new Float64Array(FINE);
     let energy = 0;
-    const frameChroma = new Array<number>(12);
     for (let off = from; off + N <= to; off += N) {
       for (let i = 0; i < N; i++) re[i] = samples[off + i] * hann[i];
       im.fill(0);
       fft(re, im);
-      frameChroma.fill(0);
+      frameFine.fill(0);
+      let frameSum = 0;
       // Fundamentals region only, power-weighted: upper harmonics otherwise
       // bleed a note's fifth into the chroma and drag the estimate to the
       // dominant (e.g. D-major songs reading as A major). Count only local
@@ -120,17 +125,45 @@ self.onmessage = (e: MessageEvent<KeyRequest>) => {
         const after = re[bin + 1] * re[bin + 1] + im[bin + 1] * im[bin + 1];
         if (power < before || power < after) continue;
         const freq = (bin * sampleRate) / N;
-        const pc = ((Math.round(12 * Math.log2(freq / 440)) % 12) + 12 + 9) % 12; // A4 -> 9
-        frameChroma[pc] += power;
-        energy += power;
+        const semis = 12 * Math.log2(freq / 440);
+        const fi = ((Math.round(semis * 10) % FINE) + FINE) % FINE;
+        frameFine[fi] += power;
+        frameSum += power;
       }
+      energy += frameSum;
       // normalize per frame: keys are voted by how long notes sound, not how
       // loud — otherwise one loud figure (a trill, a hook) drowns the tonality
-      const frameSum = frameChroma.reduce((s, v) => s + v, 0);
-      if (frameSum > 1) for (let pc = 0; pc < 12; pc++) chroma[pc] += frameChroma[pc] / frameSum;
+      if (frameSum > 1) for (let i = 0; i < FINE; i++) fine[i] += frameFine[i] / frameSum;
     }
-    windowKeys.push(energy < 1 ? null : estimate(chroma));
+    windows.push({ fine, energy });
   }
+
+  // Global tuning offset: circular mean of each fine bin's deviation from the
+  // nearest equal-tempered semitone, weighted by the whole track's chroma.
+  let sumSin = 0, sumCos = 0;
+  for (const { fine } of windows)
+    for (let i = 0; i < FINE; i++) {
+      const dev = ((i % 10) + 15) % 10 - 5; // -5..4 tenths of a semitone
+      sumSin += fine[i] * Math.sin((2 * Math.PI * dev) / 10);
+      sumCos += fine[i] * Math.cos((2 * Math.PI * dev) / 10);
+    }
+  const tuning = sumCos || sumSin ? (Math.atan2(sumSin, sumCos) / (2 * Math.PI)) : 0; // semitones
+
+  // Pass 2: collapse to 12 pitch classes with tuning compensated; windows
+  // quieter than 3% of the loudest carry the previous key instead of voting.
+  const maxEnergy = Math.max(...windows.map((w) => w.energy), 0);
+  const windowKeys: ({ tonic: number; mode: "major" | "minor" } | null)[] = windows.map(
+    ({ fine, energy }) => {
+      if (energy < maxEnergy * 0.03) return null;
+      const chroma = new Array<number>(12).fill(0);
+      for (let i = 0; i < FINE; i++) {
+        if (!fine[i]) continue;
+        const pc = ((Math.round(i / 10 - tuning) % 12) + 12 + 9) % 12; // A -> 9
+        chroma[pc] += fine[i];
+      }
+      return estimate(chroma);
+    },
+  );
 
   // silent windows carry the previous key; one-window blips (analysis noise
   // flipping between related keys) revert to their neighbour's key

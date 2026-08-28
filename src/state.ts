@@ -25,8 +25,17 @@ export type Action =
   | { type: "UPDATE_CLIP"; id: number; patch: Partial<Clip> }
   | { type: "REMOVE_CLIP"; id: number }
   | { type: "MOVE_CLIP"; id: number; dir: -1 | 1 }
+  | { type: "SET_LANE"; id: number; lane: number }
   | { type: "SET_MASTER"; patch: Partial<Master> }
-  | { type: "SET_TITLE"; title: string };
+  | { type: "SET_TITLE"; title: string }
+  | { type: "LOAD_PROJECT"; state: ProjectState };
+
+/** Renumber lanes 0..n-1, dropping gaps left by moves/removals. */
+function compactLanes(clips: Clip[]): Clip[] {
+  const order = [...new Set(clips.map((c) => c.lane))].sort((a, b) => a - b);
+  const to = new Map(order.map((lane, i) => [lane, i]));
+  return clips.map((c) => (to.get(c.lane) === c.lane ? c : { ...c, lane: to.get(c.lane)! }));
+}
 
 export function reducer(state: ProjectState, action: Action): ProjectState {
   switch (action.type) {
@@ -42,6 +51,8 @@ export function reducer(state: ProjectState, action: Action): ProjectState {
         gain: 1,
         speed: 1,
         pitch: 0,
+        loop: 1,
+        lane: state.clips.length ? Math.max(...state.clips.map((c) => c.lane)) + 1 : 0,
         muted: false,
         color: PALETTE[state.clips.length % PALETTE.length],
       };
@@ -52,25 +63,47 @@ export function reducer(state: ProjectState, action: Action): ProjectState {
       if (patch.speed !== undefined) patch.speed = clamp(patch.speed, 0.5, 2);
       if (patch.pitch !== undefined) patch.pitch = clamp(Math.round(patch.pitch), -12, 12);
       if (patch.gain !== undefined) patch.gain = clamp(patch.gain, 0, 10);
+      if (patch.loop !== undefined) patch.loop = clamp(Math.round(patch.loop * 10) / 10, 1, 50);
       return {
         ...state,
         clips: state.clips.map((c) => (c.id === action.id ? { ...c, ...patch } : c)),
       };
     }
     case "REMOVE_CLIP":
-      return { ...state, clips: state.clips.filter((c) => c.id !== action.id) };
+      return { ...state, clips: compactLanes(state.clips.filter((c) => c.id !== action.id)) };
     case "MOVE_CLIP": {
-      const i = state.clips.findIndex((c) => c.id === action.id);
-      const j = i + action.dir;
-      if (i < 0 || j < 0 || j >= state.clips.length) return state;
-      const clips = [...state.clips];
-      [clips[i], clips[j]] = [clips[j], clips[i]];
-      return { ...state, clips };
+      // swap this clip's whole lane with the neighbouring lane
+      const clip = state.clips.find((c) => c.id === action.id);
+      if (!clip) return state;
+      const a = clip.lane, b = a + action.dir;
+      if (b < 0 || b > Math.max(...state.clips.map((c) => c.lane))) return state;
+      return {
+        ...state,
+        clips: state.clips.map((c) =>
+          c.lane === a ? { ...c, lane: b } : c.lane === b ? { ...c, lane: a } : c,
+        ),
+      };
+    }
+    case "SET_LANE": {
+      const maxLane = Math.max(...state.clips.map((c) => c.lane));
+      const lane = clamp(Math.round(action.lane), 0, maxLane + 1); // +1 = new bottom lane
+      return {
+        ...state,
+        clips: compactLanes(
+          state.clips.map((c) => (c.id === action.id ? { ...c, lane } : c)),
+        ),
+      };
     }
     case "SET_MASTER":
       return { ...state, master: { ...state.master, ...action.patch } };
     case "SET_TITLE":
       return { ...state, mixTitle: action.title };
+    case "LOAD_PROJECT": {
+      // older saves have no loop/lane — default them
+      const clips = action.state.clips.map((c, i) => ({ ...c, loop: c.loop ?? 1, lane: c.lane ?? i }));
+      nextId = Math.max(0, ...clips.map((c) => c.id)) + 1;
+      return { ...action.state, clips: compactLanes(clips) };
+    }
   }
 }
 
