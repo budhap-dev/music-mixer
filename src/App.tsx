@@ -187,13 +187,13 @@ export default function App() {
         .then(() => {
           if (stale) return;
           setRenderProgress(null);
-          setStatus("✓ Speed/pitch rendering complete");
+          setStatus("✓ Tuning complete");
           setProcTick((n) => n + 1);
         })
         .catch(() => {
           if (stale) return;
           setRenderProgress(null);
-          setStatus("Speed/pitch rendering failed.");
+          setStatus("Tuning failed — try again.");
         });
     }, 300);
     return () => { stale = true; clearTimeout(t); setRenderProgress(null); };
@@ -248,15 +248,24 @@ export default function App() {
             title="Redo (⇧⌘Z / Ctrl+Shift+Z)" onClick={() => dispatch({ type: "REDO" })}>↪ Redo</button>
         </div>
       </div>
-      <div className={`status ${status.startsWith("✓") ? "ok" : ""}`}>
-        {renderProgress !== null ? (
-          <span className="render-progress">
-            Rendering speed/pitch…
+      <div className={`status ${status.startsWith("✓") ? "ok" : ""}`}>{status}</div>
+      {renderProgress !== null && (
+        <div className="render-overlay">
+          <div className="render-modal">
+            <div className="loader-stage">
+              <span className="note n1">♪</span>
+              <span className="note n2">♫</span>
+              <span className="note n3">♩</span>
+              <div className="eq-loader">
+                {[0, 1, 2, 3, 4].map((i) => <span key={i} />)}
+              </div>
+            </div>
+            <div className="render-title">Tuning your track…</div>
             <span className="pbar"><span className="pfill" style={{ width: `${Math.round(renderProgress * 100)}%` }} /></span>
-            {Math.round(renderProgress * 100)}%
-          </span>
-        ) : status}
-      </div>
+            <div className="render-pct">{Math.round(renderProgress * 100)}%</div>
+          </div>
+        </div>
+      )}
       {state.clips.length === 0 ? (
         <div className="hint">Nothing on the timeline yet — open one or more audio files to start cutting.</div>
       ) : (

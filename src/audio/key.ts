@@ -3,7 +3,7 @@ import type { KeyRequest, KeyResponse, KeySegment } from "./key.worker";
 
 export type { KeySegment } from "./key.worker";
 
-const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+export const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 /** Human label for a segment, transposed by a clip's pitch shift (semitones). */
 export const keyLabel = (seg: KeySegment, semitones = 0): string =>
