@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import type { Clip } from "../types";
 import type { Action } from "../state";
 import type { KeySegment } from "../audio/key";
-import { clamp, fmt, fmtTick, mixLength } from "../utils/time";
+import { clamp, fmt, fmtTick, mixLength, parseTime } from "../utils/time";
 import Lane from "./Lane";
 
 interface Props {
@@ -24,8 +24,25 @@ function rulerStep(pps: number): number {
 export default function Timeline({ clips, dispatch, position, onSeek, previewId, onPlayTrack, keys }: Props) {
   const [pps, setPps] = useState(3); // pixels per second (zoom)
   const [scrub, setScrub] = useState<number | null>(null); // playhead while dragging
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const [timeText, setTimeText] = useState<string | null>(null); // playhead chip being edited
   const scrollRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
+
+  // clips grouped into lanes (a lane can hold several clips, i.e. a group)
+  const laneCount = clips.length ? Math.max(...clips.map((c) => c.lane)) + 1 : 0;
+  const lanes = Array.from({ length: laneCount }, (_, i) =>
+    clips.filter((c) => c.lane === i).sort((a, b) => a.offset - b.offset),
+  ).filter((l) => l.length);
+
+  const commitTime = () => {
+    if (timeText !== null) {
+      const v = parseTime(timeText);
+      if (v !== null && !Number.isNaN(v)) onSeek(clamp(v, 0, mixLength(clips)));
+    }
+    setTimeText(null);
+  };
 
   const span = Math.max(60, mixLength(clips)) + 30;
   const width = span * pps;
@@ -97,21 +114,34 @@ export default function Timeline({ clips, dispatch, position, onSeek, previewId,
               ))}
             </div>
           </div>
-          {clips.map((clip, i) => (
+          {lanes.map((laneClips) => (
             <Lane
-              key={clip.id}
-              clip={clip}
-              index={i}
-              count={clips.length}
+              key={laneClips[0].lane}
+              laneClips={laneClips}
+              laneIndex={laneClips[0].lane}
+              laneCount={lanes.length}
               pps={pps}
               width={width}
               gridPx={step * pps}
+              laneHeightPx={112} /* .lane height: 7rem */
               dispatch={dispatch}
               onSeek={onSeek}
-              previewing={previewId === clip.id}
+              previewId={previewId}
               onPlayTrack={onPlayTrack}
-              keySegments={keys[clip.fileId]}
+              keys={keys}
               position={scrub ?? position}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              collapsed={collapsed.has(laneClips[0].lane)}
+              onToggleCollapse={() =>
+                setCollapsed((prev) => {
+                  const next = new Set(prev);
+                  const lane = laneClips[0].lane;
+                  if (next.has(lane)) next.delete(lane);
+                  else next.add(lane);
+                  return next;
+                })
+              }
             />
           ))}
           <div
@@ -122,7 +152,33 @@ export default function Timeline({ clips, dispatch, position, onSeek, previewId,
             <div className="ph-grab" title="Drag to seek" onPointerDown={startScrub}>
               <div className="ph-cap" />
             </div>
-            <div className="ph-time">{fmt(scrub ?? position)}</div>
+            {timeText !== null ? (
+              <input
+                className="ph-time-input"
+                autoFocus
+                value={timeText}
+                spellCheck={false}
+                onChange={(e) => setTimeText(e.target.value)}
+                onBlur={commitTime}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  if (e.key === "Escape") setTimeText(null);
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <div
+                className="ph-time"
+                title="Click to type an exact time (e.g. 1:23.5)"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  // on click, not pointerdown: the same press's trailing
+                  // mousedown would blur (and instantly close) the editor
+                  e.stopPropagation();
+                  setTimeText(fmt(scrub ?? position));
+                }}
+              >{fmt(scrub ?? position)}</div>
+            )}
           </div>
           </div>
         </div>

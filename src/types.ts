@@ -9,6 +9,8 @@ export interface Clip {
   gain: number; // 0–10, 1 = original
   speed: number; // 0.5–2, pitch preserved
   pitch: number; // semitones, −12…+12, tempo preserved
+  loop: number; // 1–50 passes of the cut; 1.5 = one and a half times
+  lane: number; // timeline row — several clips may share one lane
   muted: boolean;
   color: string;
 }

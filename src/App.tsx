@@ -3,6 +3,10 @@ import { Engine } from "./audio/engine";
 import { exportMp3 } from "./audio/export";
 import { importFile } from "./audio/files";
 import { detectKey, type KeySegment } from "./audio/key";
+import {
+  autosave, clearSaved, exportProjectBlob, loadSaved, readProjectFile,
+  restoreProject, type SavedProject,
+} from "./audio/persist";
 import { ensureProcessed, needsProcessing } from "./audio/process";
 import { historyReducer, initialHistory } from "./state";
 import { clamp, clipLength, fmt, mixLength } from "./utils/time";
@@ -26,6 +30,8 @@ export default function App() {
   const [renderProgress, setRenderProgress] = useState<number | null>(null);
   // detected key timeline per source file (shown per lane, follows playhead)
   const [keys, setKeys] = useState<Record<string, KeySegment[]>>({});
+  // autosaved session found on startup, offered as a Resume banner
+  const [saved, setSaved] = useState<SavedProject | null>(null);
 
   const total = mixLength(state.clips);
   const previewClip = preview === null ? undefined : state.clips.find((c) => c.id === preview.id);
@@ -111,6 +117,50 @@ export default function App() {
     if (playing) engine.play(audible(previewId), state.master, target);
     else engine.setPosition(target);
     setPos(target);
+  };
+
+  // offer to resume the autosaved session; keep autosave fresh while editing
+  useEffect(() => {
+    loadSaved().then(setSaved).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!state.clips.length) return;
+    const t = setTimeout(() => { autosave(state).catch(() => {}); }, 800);
+    return () => clearTimeout(t);
+  }, [state]);
+
+  const resumeSaved = async () => {
+    if (!saved) return;
+    dispatch({ type: "LOAD_PROJECT", state: await restoreProject(saved) });
+    setSaved(null);
+    setStatus("✓ Session restored");
+  };
+
+  const discardSaved = () => {
+    setSaved(null);
+    void clearSaved().catch(() => {});
+  };
+
+  const saveProjectFile = () => {
+    const url = URL.createObjectURL(exportProjectBlob(state));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(state.mixTitle.trim() || "mix").replace(/[/\\:*?"<>|]/g, "_")}.mixproj`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    setStatus("✓ Project saved — open it later to continue this arrangement");
+  };
+
+  const openProjectFile = async (file: File) => {
+    try {
+      dispatch({ type: "LOAD_PROJECT", state: await restoreProject(await readProjectFile(file)) });
+      setSaved(null);
+      setStatus("✓ Project opened");
+    } catch {
+      setStatus(`Couldn't open ${file.name} as a Music Mixer project.`);
+    }
   };
 
   // detect each imported file's key timeline once, off the main thread
@@ -234,6 +284,15 @@ export default function App() {
           <input type="file" accept="audio/*" multiple
             onChange={(e) => { void openFiles(e.target.files); e.target.value = ""; }} />
         </label>
+        <label className="upload-label">
+          📂 Open project
+          <input type="file" accept=".mixproj"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void openProjectFile(f);
+              e.target.value = "";
+            }} />
+        </label>
         {state.clips.length > 0 && (
           <div className="transport">
             <button onClick={playPause}>{playing ? "⏸ Pause" : "▶ Play"}</button>
@@ -248,6 +307,15 @@ export default function App() {
             title="Redo (⇧⌘Z / Ctrl+Shift+Z)" onClick={() => dispatch({ type: "REDO" })}>↪ Redo</button>
         </div>
       </div>
+      {saved && state.clips.length === 0 && (
+        <div className="resume-banner">
+          ⏪ Autosaved session from {new Date(saved.savedAt).toLocaleString()} —{" "}
+          {saved.state.clips.length} track{saved.state.clips.length === 1 ? "" : "s"}
+          {saved.state.mixTitle ? ` · “${saved.state.mixTitle}”` : ""}
+          <button className="mode-btn" onClick={() => void resumeSaved()}>▶ Resume</button>
+          <button className="mode-btn" onClick={discardSaved}>Discard</button>
+        </div>
+      )}
       <div className={`status ${status.startsWith("✓") ? "ok" : ""}`}>{status}</div>
       {renderProgress !== null && (
         <div className="render-overlay">
@@ -280,6 +348,10 @@ export default function App() {
               value={state.mixTitle}
               onChange={(e) => dispatch({ type: "SET_TITLE", title: e.target.value })}
             />
+            <button className="save-btn" onClick={saveProjectFile}
+              title="Download this arrangement + its audio as one .mixproj file — open it later (or on another machine) to keep working">
+              💾 Save project
+            </button>
             <button onClick={() => void exportMix()} disabled={exportProgress !== null}>
               {exportProgress === null
                 ? "⬇ Export MP3"

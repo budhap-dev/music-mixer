@@ -40,7 +40,11 @@ export default function TimeBox({ label, title, value, onCommit }: Props) {
         type="text"
         value={text}
         spellCheck={false}
-        onFocus={() => setEditing(true)}
+        onFocus={(e) => {
+          setEditing(true);
+          const el = e.target;
+          setTimeout(() => el.select(), 0);
+        }}
         onBlur={() => { setEditing(false); commit(); }}
         onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
         onChange={(e) => setText(e.target.value)}
