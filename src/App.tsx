@@ -2,22 +2,32 @@ import { useEffect, useReducer, useRef, useState } from "react";
 import { Engine } from "./audio/engine";
 import { exportMp3 } from "./audio/export";
 import { importFile } from "./audio/files";
-import { initialState, reducer } from "./state";
-import { clamp, fmt, mixLength } from "./utils/time";
+import { historyReducer, initialHistory } from "./state";
+import { clamp, clipLength, fmt, mixLength } from "./utils/time";
 import MasterPanel from "./components/MasterPanel";
 import ThemePicker from "./components/ThemePicker";
 import Timeline from "./components/Timeline";
 
 export default function App() {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [history, dispatch] = useReducer(historyReducer, initialHistory);
+  const state = history.present;
   const [status, setStatus] = useState("");
   const engineRef = useRef<Engine | null>(null);
   const engine = (engineRef.current ??= new Engine());
   const [playing, setPlaying] = useState(false);
   const [pos, setPos] = useState(0);
+  // track being previewed alone via its lane ▶ button (and where the preview
+  // began, so stopping returns there); null = full mix
+  const [preview, setPreview] = useState<{ id: number; from: number } | null>(null);
+  const previewId = preview?.id ?? null;
   const [exportProgress, setExportProgress] = useState<number | null>(null);
 
   const total = mixLength(state.clips);
+  const previewClip = preview === null ? undefined : state.clips.find((c) => c.id === preview.id);
+  // what the engine should hear: one track (unmuted) while previewing, else the mix
+  const audible = (id: number | null) =>
+    id === null ? state.clips : state.clips.filter((c) => c.id === id).map((c) => ({ ...c, muted: false }));
+  const stopAt = previewClip ? previewClip.offset + clipLength(previewClip) : total;
 
   const openFiles = async (list: FileList | null) => {
     if (!list?.length) return;
@@ -38,10 +48,12 @@ export default function App() {
     if (playing) {
       engine.pause();
       setPlaying(false);
+      setPreview(null);
       setPos(engine.position());
     } else {
       const from = engine.position() >= total ? 0 : engine.position();
       engine.play(state.clips, state.master, from);
+      setPreview(null);
       setPlaying(true);
     }
   };
@@ -49,7 +61,31 @@ export default function App() {
   const stopAll = () => {
     engine.stop();
     setPlaying(false);
+    setPreview(null);
     setPos(0);
+  };
+
+  /**
+   * Lane ▶: play this track alone — from the playhead if it sits inside the
+   * track's span, else from the track's start; ⏹ stops it.
+   */
+  const playTrack = (id: number) => {
+    if (playing && previewId === id) {
+      engine.pause();
+      setPlaying(false);
+      setPreview(null);
+      setPos(engine.position());
+      return;
+    }
+    const clip = state.clips.find((c) => c.id === id);
+    if (!clip) return;
+    const cur = engine.position();
+    const inSpan = cur >= clip.offset && cur < clip.offset + clipLength(clip);
+    const from = inSpan ? cur : clip.offset;
+    engine.play(audible(id), state.master, from);
+    setPreview({ id, from });
+    setPlaying(true);
+    setPos(from);
   };
 
   const exportMix = async () => {
@@ -67,21 +103,37 @@ export default function App() {
 
   const seek = (t: number) => {
     const target = clamp(t, 0, total);
-    if (playing) engine.play(state.clips, state.master, target);
+    if (playing) engine.play(audible(previewId), state.master, target);
     else engine.setPosition(target);
     setPos(target);
   };
 
-  // transport clock + end-of-mix handling
+  // ⌘Z / Ctrl+Z undo, ⇧⌘Z / Ctrl+Shift+Z redo — text fields keep native undo
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      e.preventDefault();
+      dispatch({ type: e.shiftKey ? "REDO" : "UNDO" });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // transport clock + end handling (end of mix, or end of the previewed track)
   useEffect(() => {
     if (!playing) return;
+    const restart = preview?.from ?? 0;
     let raf = 0;
     const tick = () => {
       const p = engine.position();
-      if (p >= total) {
-        engine.stop();
+      if (p >= stopAt) {
+        engine.pause();
+        engine.setPosition(restart);
         setPlaying(false);
-        setPos(0);
+        setPreview(null);
+        setPos(restart);
         return;
       }
       setPos(p);
@@ -89,12 +141,13 @@ export default function App() {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [playing, total, engine]);
+  }, [playing, stopAt, preview, engine]);
 
-  // volume & mute apply live, no rebuild
+  // volume & mute apply live, no rebuild (a previewed track ignores its mute)
   useEffect(() => {
-    for (const c of state.clips) engine.setClipGain(c.id, c.muted ? 0 : c.gain);
-  }, [state.clips, engine]);
+    for (const c of state.clips)
+      engine.setClipGain(c.id, c.muted && c.id !== previewId ? 0 : c.gain);
+  }, [state.clips, previewId, engine]);
 
   // EQ sliders apply live, no rebuild
   const { bass, mid, treble } = state.master;
@@ -109,7 +162,7 @@ export default function App() {
     state.master.enhance;
   useEffect(() => {
     if (!engine.playing) return;
-    const t = setTimeout(() => engine.play(state.clips, state.master, engine.position()), 150);
+    const t = setTimeout(() => engine.play(audible(previewId), state.master, engine.position()), 150);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structSig]);
@@ -137,13 +190,20 @@ export default function App() {
             <span className="clock">{fmt(pos)} / {fmt(total)}</span>
           </div>
         )}
+        <div className="undo-redo">
+          <button className="mode-btn" disabled={!history.past.length}
+            title="Undo (⌘Z / Ctrl+Z)" onClick={() => dispatch({ type: "UNDO" })}>↩ Undo</button>
+          <button className="mode-btn" disabled={!history.future.length}
+            title="Redo (⇧⌘Z / Ctrl+Shift+Z)" onClick={() => dispatch({ type: "REDO" })}>↪ Redo</button>
+        </div>
       </div>
       <div className="status">{status}</div>
       {state.clips.length === 0 ? (
         <div className="hint">Nothing on the timeline yet — open one or more audio files to start cutting.</div>
       ) : (
         <>
-          <Timeline clips={state.clips} dispatch={dispatch} position={pos} onSeek={seek} />
+          <Timeline clips={state.clips} dispatch={dispatch} position={pos} onSeek={seek}
+            previewId={playing ? previewId : null} onPlayTrack={playTrack} />
           <MasterPanel master={state.master} dispatch={dispatch} />
           <div className="mix-controls">
             <input

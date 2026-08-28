@@ -73,3 +73,77 @@ export function reducer(state: ProjectState, action: Action): ProjectState {
       return { ...state, mixTitle: action.title };
   }
 }
+
+/* ---- undo/redo ---- */
+
+export type HistoryAction = Action | { type: "UNDO" } | { type: "REDO" };
+
+export interface History {
+  past: ProjectState[];
+  present: ProjectState;
+  future: ProjectState[];
+  lastKey: string | null; // coalescing: which knob the previous action turned
+  lastTime: number;
+}
+
+export const initialHistory: History = {
+  past: [],
+  present: initialState,
+  future: [],
+  lastKey: null,
+  lastTime: 0,
+};
+
+/**
+ * Rapid same-target edits (a drag, typing, a slider sweep) merge into one undo
+ * step; the key identifies the target so a different edit breaks the run.
+ */
+function coalesceKey(action: Action): string | null {
+  switch (action.type) {
+    case "UPDATE_CLIP":
+      return `clip:${action.id}:${Object.keys(action.patch).sort().join()}`;
+    case "SET_MASTER":
+      return `master:${Object.keys(action.patch).sort().join()}`;
+    case "SET_TITLE":
+      return "title";
+    default:
+      return null;
+  }
+}
+
+const MAX_UNDO = 100;
+const COALESCE_MS = 1000;
+
+export function historyReducer(h: History, action: HistoryAction): History {
+  if (action.type === "UNDO") {
+    if (!h.past.length) return h;
+    return {
+      past: h.past.slice(0, -1),
+      present: h.past[h.past.length - 1],
+      future: [h.present, ...h.future],
+      lastKey: null,
+      lastTime: 0,
+    };
+  }
+  if (action.type === "REDO") {
+    if (!h.future.length) return h;
+    return {
+      past: [...h.past, h.present],
+      present: h.future[0],
+      future: h.future.slice(1),
+      lastKey: null,
+      lastTime: 0,
+    };
+  }
+  const present = reducer(h.present, action);
+  if (present === h.present) return h;
+  const key = coalesceKey(action);
+  const merge = key !== null && key === h.lastKey && Date.now() - h.lastTime < COALESCE_MS;
+  return {
+    past: merge ? h.past : [...h.past, h.present].slice(-MAX_UNDO),
+    present,
+    future: [],
+    lastKey: key,
+    lastTime: Date.now(),
+  };
+}

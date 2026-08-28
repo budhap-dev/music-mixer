@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import type { Clip } from "../types";
 import type { Action } from "../state";
-import { clamp, fmtTick, mixLength } from "../utils/time";
+import { clamp, fmt, fmtTick, mixLength } from "../utils/time";
 import Lane from "./Lane";
 
 interface Props {
@@ -9,6 +9,8 @@ interface Props {
   dispatch: React.Dispatch<Action>;
   position: number;
   onSeek: (t: number) => void;
+  previewId: number | null;
+  onPlayTrack: (id: number) => void;
 }
 
 function rulerStep(pps: number): number {
@@ -17,9 +19,11 @@ function rulerStep(pps: number): number {
   return 600;
 }
 
-export default function Timeline({ clips, dispatch, position, onSeek }: Props) {
+export default function Timeline({ clips, dispatch, position, onSeek, previewId, onPlayTrack }: Props) {
   const [pps, setPps] = useState(3); // pixels per second (zoom)
+  const [scrub, setScrub] = useState<number | null>(null); // playhead while dragging
   const scrollRef = useRef<HTMLDivElement>(null);
+  const rulerRef = useRef<HTMLDivElement>(null);
 
   const span = Math.max(60, mixLength(clips)) + 30;
   const width = span * pps;
@@ -28,6 +32,30 @@ export default function Timeline({ clips, dispatch, position, onSeek }: Props) {
   for (let t = 0; t <= span; t += step) ticks.push(t);
 
   const setZoom = (next: number) => setPps(clamp(next, 0.3, 60));
+
+  // Press anywhere on the ruler or grab the playhead, then drag to scrub.
+  // The line follows the pointer; the seek commits on release (a plain click
+  // still seeks), so playback isn't rebuilt on every pointermove.
+  const startScrub = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const timeAt = (clientX: number) => {
+      const rect = rulerRef.current!.getBoundingClientRect();
+      return clamp((clientX - rect.left) / pps, 0, mixLength(clips));
+    };
+    const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture(e.pointerId);
+    setScrub(timeAt(e.clientX));
+    const onMove = (ev: PointerEvent) => setScrub(timeAt(ev.clientX));
+    const onUp = (ev: PointerEvent) => {
+      onSeek(timeAt(ev.clientX));
+      setScrub(null);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+    };
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+  };
   const fit = () => {
     const w = scrollRef.current?.clientWidth ?? 800;
     setZoom(w / span);
@@ -57,12 +85,10 @@ export default function Timeline({ clips, dispatch, position, onSeek }: Props) {
             <div className="ruler-spacer" />
             <div
               className="ruler"
+              ref={rulerRef}
               style={{ width }}
-              title="Click to seek"
-              onClick={(e) => {
-                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                onSeek((e.clientX - rect.left) / pps);
-              }}
+              title="Click or drag to seek"
+              onPointerDown={startScrub}
             >
               {ticks.map((t) => (
                 <div key={t} className="tick" style={{ left: t * pps }}>{fmtTick(t)}</div>
@@ -80,9 +106,20 @@ export default function Timeline({ clips, dispatch, position, onSeek }: Props) {
               gridPx={step * pps}
               dispatch={dispatch}
               onSeek={onSeek}
+              previewing={previewId === clip.id}
+              onPlayTrack={onPlayTrack}
             />
           ))}
-          <div className="playhead" style={{ left: `calc(19rem + ${position * pps}px)` }} />
+          <div
+            className={`playhead ${scrub !== null ? "scrubbing" : ""}`}
+            style={{ left: `calc(19rem + ${(scrub ?? position) * pps}px)` }}
+          >
+            <div className="ph-line" />
+            <div className="ph-grab" title="Drag to seek" onPointerDown={startScrub}>
+              <div className="ph-cap" />
+            </div>
+            <div className="ph-time">{fmt(scrub ?? position)}</div>
+          </div>
           </div>
         </div>
       </div>
