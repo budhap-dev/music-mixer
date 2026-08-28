@@ -1,5 +1,6 @@
 import type { Clip, Master } from "../types";
 import { getBuffer } from "./files";
+import { getProcessed, needsProcessing } from "./process";
 
 export interface MixGraph {
   sources: AudioBufferSourceNode[];
@@ -44,17 +45,29 @@ export function buildMixGraph(
   const sources: AudioBufferSourceNode[] = [];
   const clipGains = new Map<number, GainNode>();
   for (const clip of clips) {
-    const buffer = getBuffer(clip.fileId);
+    // Prefer the formant-preserved rendition (speed keeps pitch, pitch keeps
+    // speed). Until it's ready, fall back to naive playbackRate so audio
+    // still plays; the caller rebuilds once processing completes.
+    const processed = needsProcessing(clip) ? getProcessed(clip) : undefined;
+    const buffer = processed ?? getBuffer(clip.fileId);
     if (!buffer) continue;
     const endT = clip.offset + (clip.end - clip.start) / clip.speed;
     if (from >= endT) continue;
-    const src = new AudioBufferSourceNode(ctx, { buffer, playbackRate: clip.speed });
+    const src = processed
+      ? new AudioBufferSourceNode(ctx, { buffer })
+      : new AudioBufferSourceNode(ctx, { buffer, playbackRate: clip.speed });
     const gain = new GainNode(ctx, { gain: clip.muted ? 0 : clip.gain });
     src.connect(gain);
     gain.connect(bass);
     const when = startTime + Math.max(0, clip.offset - from);
-    const sourceOffset = clip.start + Math.max(0, from - clip.offset) * clip.speed;
-    src.start(when, sourceOffset, clip.end - sourceOffset);
+    if (processed) {
+      // processed buffer is the whole file stretched: source t -> t/speed
+      const startP = clip.start / clip.speed + Math.max(0, from - clip.offset);
+      src.start(when, startP, clip.end / clip.speed - startP);
+    } else {
+      const sourceOffset = clip.start + Math.max(0, from - clip.offset) * clip.speed;
+      src.start(when, sourceOffset, clip.end - sourceOffset);
+    }
     sources.push(src);
     clipGains.set(clip.id, gain);
   }
