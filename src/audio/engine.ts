@@ -4,10 +4,9 @@ import { buildMixGraph } from "./graph";
 /**
  * Live-preview engine: builds a Web Audio graph for the whole arrangement and
  * plays it from a transport position. Per-clip gain and master EQ are updated
- * in place; structural edits (cuts, moves, speed, enhance) rebuild the graph.
- *
- * Milestone-4 note: speed uses playbackRate, which shifts pitch in preview;
- * clip pitch is not yet audible. The SoundTouch worklet will fix both.
+ * in place; structural edits (cuts, moves, speed, pitch, enhance) rebuild the
+ * graph. Speed/pitch use formant-preserved renditions from process.ts, with a
+ * playbackRate fallback while those render (see graph.ts).
  */
 export class Engine {
   private ctx: AudioContext | null = null;

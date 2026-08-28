@@ -1,6 +1,7 @@
 import type { Clip, Master } from "../types";
 import type { EncodeMessage, EncodeRequest } from "./mp3.worker";
 import { buildMixGraph } from "./graph";
+import { ensureProcessed } from "./process";
 import { mixLength } from "../utils/time";
 
 const SAMPLE_RATE = 44100;
@@ -40,6 +41,7 @@ export async function exportMp3(
   title: string,
   onProgress: (v: number) => void,
 ): Promise<void> {
+  await ensureProcessed(clips); // formant-preserved speed/pitch renditions
   const rendered = await renderMix(clips, master);
   const blob = await encodeMp3(rendered, onProgress);
   const name = (title.trim() || "mix").replace(/[/\\:*?"<>|]/g, "_");
