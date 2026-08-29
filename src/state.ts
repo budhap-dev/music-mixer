@@ -26,6 +26,7 @@ export type Action =
   | { type: "REMOVE_CLIP"; id: number }
   | { type: "MOVE_CLIP"; id: number; dir: -1 | 1 }
   | { type: "SET_LANE"; id: number; lane: number }
+  | { type: "DUPLICATE_LANE"; id: number }
   | { type: "SET_MASTER"; patch: Partial<Master> }
   | { type: "SET_TITLE"; title: string }
   | { type: "LOAD_PROJECT"; state: ProjectState };
@@ -51,7 +52,6 @@ export function reducer(state: ProjectState, action: Action): ProjectState {
         gain: 1,
         speed: 1,
         pitch: 0,
-        loop: 1,
         lane: state.clips.length ? Math.max(...state.clips.map((c) => c.lane)) + 1 : 0,
         muted: false,
         color: PALETTE[state.clips.length % PALETTE.length],
@@ -63,7 +63,6 @@ export function reducer(state: ProjectState, action: Action): ProjectState {
       if (patch.speed !== undefined) patch.speed = clamp(patch.speed, 0.5, 2);
       if (patch.pitch !== undefined) patch.pitch = clamp(Math.round(patch.pitch), -12, 12);
       if (patch.gain !== undefined) patch.gain = clamp(patch.gain, 0, 10);
-      if (patch.loop !== undefined) patch.loop = clamp(Math.round(patch.loop * 10) / 10, 1, 50);
       return {
         ...state,
         clips: state.clips.map((c) => (c.id === action.id ? { ...c, ...patch } : c)),
@@ -84,6 +83,27 @@ export function reducer(state: ProjectState, action: Action): ProjectState {
         ),
       };
     }
+    case "DUPLICATE_LANE": {
+      // copy every clip on this lane, settings and all, into a fresh lane
+      // directly below; anything further down shifts one lane down
+      const src = state.clips.find((c) => c.id === action.id);
+      if (!src) return state;
+      const lane = src.lane;
+      const copies = state.clips
+        .filter((c) => c.lane === lane)
+        .map((c) => ({
+          ...c,
+          id: nextId++,
+          lane: lane + 1,
+        }));
+      return {
+        ...state,
+        clips: [
+          ...state.clips.map((c) => (c.lane > lane ? { ...c, lane: c.lane + 1 } : c)),
+          ...copies,
+        ],
+      };
+    }
     case "SET_LANE": {
       const maxLane = Math.max(...state.clips.map((c) => c.lane));
       const lane = clamp(Math.round(action.lane), 0, maxLane + 1); // +1 = new bottom lane
@@ -99,8 +119,8 @@ export function reducer(state: ProjectState, action: Action): ProjectState {
     case "SET_TITLE":
       return { ...state, mixTitle: action.title };
     case "LOAD_PROJECT": {
-      // older saves have no loop/lane — default them
-      const clips = action.state.clips.map((c, i) => ({ ...c, loop: c.loop ?? 1, lane: c.lane ?? i }));
+      // older saves have no lane — default it
+      const clips = action.state.clips.map((c, i) => ({ ...c, lane: c.lane ?? i }));
       nextId = Math.max(0, ...clips.map((c) => c.id)) + 1;
       return { ...action.state, clips: compactLanes(clips) };
     }

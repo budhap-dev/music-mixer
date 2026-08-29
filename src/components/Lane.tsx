@@ -104,7 +104,6 @@ export default function Lane({
     [
       c.speed !== 1 && `speed ${c.speed}×`,
       c.pitch !== 0 && `pitch ${c.pitch > 0 ? "+" : ""}${c.pitch}`,
-      (c.loop ?? 1) !== 1 && `↻ ×${c.loop}`,
     ].filter(Boolean);
 
   if (collapsed) {
@@ -205,10 +204,8 @@ export default function Lane({
             onClick={() => dispatch({ type: "MOVE_CLIP", id: clip.id, dir: -1 })}>▲</button>
           <button className="mv" disabled={laneIndex === laneCount - 1} title="Move lane down"
             onClick={() => dispatch({ type: "MOVE_CLIP", id: clip.id, dir: 1 })}>▼</button>
-          <button className="mv" title="Play this cut twice in a row"
-            onClick={() => update({ loop: 2 })}>×2</button>
-          <button className="mv" title="Play this cut three times in a row"
-            onClick={() => update({ loop: 3 })}>×3</button>
+          <button className="mv" title="Duplicate this track (with all its settings) into a new lane below"
+            onClick={() => dispatch({ type: "DUPLICATE_LANE", id: clip.id })}>⧉</button>
           {laneClips.length > 1 && (
             <span className="hint" title="This lane holds several clips — click a block to edit it here">
               {laneClips.length} clips
@@ -233,9 +230,6 @@ export default function Lane({
           <NumBox label="Pitch" title="Pitch in semitones, −12…+12 (speed and vocal timbre preserved) — applies on Enter or leaving the box"
             value={clip.pitch} min={-12} max={12} step={1}
             onCommit={(v) => update({ pitch: Math.round(v) })} />
-          <NumBox label="↻" title="Repeat the cut this many times (1.5 = one and a half passes)"
-            value={clip.loop ?? 1} min={1} max={50} step={0.1}
-            onCommit={(v) => update({ loop: v })} />
         </div>
       </div>
       <div
@@ -259,7 +253,7 @@ export default function Lane({
                 background: c.color,
                 color: textOn(c.color),
               }}
-              title={`${c.name} · plays ${fmt(c.offset)}–${fmt(c.offset + len)} · cut ${fmt(c.start)}–${fmt(c.end)}${(c.loop ?? 1) !== 1 ? ` ×${c.loop}` : ""}${keyTitle && c.id === clip.id ? `\nKey${c.pitch ? " (incl. pitch shift)" : ""}: ${keyTitle}` : ""}\nDrag up/down to move to another lane`}
+              title={`${c.name} · plays ${fmt(c.offset)}–${fmt(c.offset + len)} · cut ${fmt(c.start)}–${fmt(c.end)}${keyTitle && c.id === clip.id ? `\nKey${c.pitch ? " (incl. pitch shift)" : ""}: ${keyTitle}` : ""}\nDrag up/down to move to another lane`}
               onPointerDown={(e) => startDrag(c, e, "move")}
             >
               <div className="handle left" onPointerDown={(e) => startDrag(c, e, "left")} />

@@ -51,31 +51,23 @@ export function buildMixGraph(
     const processed = needsProcessing(clip) ? getProcessed(clip) : undefined;
     const buffer = processed ?? getBuffer(clip.fileId);
     if (!buffer) continue;
-    const unit = (clip.end - clip.start) / clip.speed; // one pass, output-domain
-    const loops = clip.loop ?? 1;
-    if (from >= clip.offset + unit * loops) continue;
+    const len = (clip.end - clip.start) / clip.speed; // output-domain length
+    if (from >= clip.offset + len) continue;
     const gain = new GainNode(ctx, { gain: clip.muted ? 0 : clip.gain });
     gain.connect(bass);
-    // each pass of the cut (loop) is its own source into the clip's gain;
-    // the final pass may be fractional (loop 1.5 = one and a half times)
-    for (let rep = 0; rep < Math.ceil(loops); rep++) {
-      const passLen = Math.min(1, loops - rep) * unit;
-      const segStart = clip.offset + rep * unit;
-      if (from >= segStart + passLen) continue;
-      const skip = Math.max(0, from - segStart); // output-domain, into this pass
-      const when = startTime + Math.max(0, segStart - from);
-      const src = processed
-        ? new AudioBufferSourceNode(ctx, { buffer })
-        : new AudioBufferSourceNode(ctx, { buffer, playbackRate: clip.speed });
-      src.connect(gain);
-      if (processed) {
-        // processed buffer is the whole file stretched: source t -> t/speed
-        src.start(when, clip.start / clip.speed + skip, passLen - skip);
-      } else {
-        src.start(when, clip.start + skip * clip.speed, (passLen - skip) * clip.speed);
-      }
-      sources.push(src);
+    const skip = Math.max(0, from - clip.offset); // output-domain, into the clip
+    const when = startTime + Math.max(0, clip.offset - from);
+    const src = processed
+      ? new AudioBufferSourceNode(ctx, { buffer })
+      : new AudioBufferSourceNode(ctx, { buffer, playbackRate: clip.speed });
+    src.connect(gain);
+    if (processed) {
+      // processed buffer is the whole file stretched: source t -> t/speed
+      src.start(when, clip.start / clip.speed + skip, len - skip);
+    } else {
+      src.start(when, clip.start + skip * clip.speed, (len - skip) * clip.speed);
     }
+    sources.push(src);
     clipGains.set(clip.id, gain);
   }
   return { sources, clipGains, eq: { bass, mid, treble } };
