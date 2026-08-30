@@ -203,6 +203,10 @@ select.key-badge {
 .lane-head input.color::-webkit-color-swatch { border: none; border-radius: 50%; }
 .lane-head .mv { background: none; border: none; color: var(--text); opacity: 0.55; cursor: pointer; padding: 0 0.1rem; font-size: 0.7rem; }
 .lane-head .mv:hover { opacity: 1; }
+.lane-head .vol-slider {
+  flex: 1 1 3rem; min-width: 2.5rem; max-width: 6rem;
+  accent-color: var(--accent); padding: 0; border: none; height: 1rem;
+}
 .lane-head .mv:disabled { opacity: 0.15; cursor: default; }
 .lane-head .remove { background: none; border: none; color: #dc2626; font-size: 1rem; padding: 0.1rem; cursor: pointer; }
 .lane-head .ctl label { display: flex; align-items: center; gap: 0.2rem; font-size: 0.72rem; opacity: 0.85; cursor: help; }
@@ -238,11 +242,45 @@ select.key-badge {
   white-space: nowrap; font-size: 0.75rem; opacity: 0.8;
 }
 .mini-block {
-  position: absolute; top: 50%; transform: translateY(-50%);
-  height: 6px; border-radius: 3px; cursor: pointer;
+  position: absolute; transform: translateY(-50%);
+  height: 6px; border-radius: 3px; cursor: ns-resize;
+  touch-action: none;
 }
 .mini-block:hover { height: 10px; }
-.block .body { flex: 1; overflow: hidden; padding: 0.15rem 0.2rem; pointer-events: none; white-space: nowrap; }
+.block .vol-line {
+  position: absolute; left: 0; right: 0; height: 14px; margin-top: -7px;
+  cursor: ns-resize; z-index: 1; touch-action: none;
+}
+.block .vol-line::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 6px;
+  border-top: 2px solid currentColor; opacity: 0.85;
+}
+.block .vol-env {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  overflow: visible; z-index: 1; pointer-events: none;
+}
+.block .vol-env svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.block .vol-env .env-pt {
+  position: absolute; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px;
+  border-radius: 50%; background: currentColor; border: 1.5px solid rgba(0,0,0,0.25);
+  pointer-events: all; cursor: move; touch-action: none;
+}
+.block .vol-env .env-line {
+  fill: none; stroke: currentColor; stroke-width: 2; opacity: 0.9;
+}
+.block .vol-env .env-line-hit {
+  fill: none; stroke: transparent; stroke-width: 16;
+  pointer-events: stroke; cursor: copy;
+}
+.block .vol-line .vol-val {
+  position: absolute; right: 2px; top: -9px;
+  font-size: 0.62rem; font-weight: 700; opacity: 0.95;
+}
+.block .wave {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: none; border-radius: 6px;
+}
+.block .body { flex: 1; overflow: hidden; padding: 0.15rem 0.2rem; pointer-events: none; white-space: nowrap; position: relative; }
 .block .place { font-weight: 600; }
 .block .cut { opacity: 0.85; }
 .block .fx { opacity: 0.85; font-style: italic; }

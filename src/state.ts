@@ -52,6 +52,7 @@ export function reducer(state: ProjectState, action: Action): ProjectState {
         gain: 1,
         speed: 1,
         pitch: 0,
+        env: null,
         lane: state.clips.length ? Math.max(...state.clips.map((c) => c.lane)) + 1 : 0,
         muted: false,
         color: PALETTE[state.clips.length % PALETTE.length],
@@ -120,7 +121,7 @@ export function reducer(state: ProjectState, action: Action): ProjectState {
       return { ...state, mixTitle: action.title };
     case "LOAD_PROJECT": {
       // older saves have no lane — default it
-      const clips = action.state.clips.map((c, i) => ({ ...c, lane: c.lane ?? i }));
+      const clips = action.state.clips.map((c, i) => ({ ...c, lane: c.lane ?? i, env: c.env ?? null }));
       nextId = Math.max(0, ...clips.map((c) => c.id)) + 1;
       return { ...action.state, clips: compactLanes(clips) };
     }
