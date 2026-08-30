@@ -10,6 +10,8 @@ export interface Clip {
   speed: number; // 0.5–2, pitch preserved
   pitch: number; // semitones, −12…+12, tempo preserved
   lane: number; // timeline row — several clips may share one lane
+  /** Volume automation points (source time, gain 0–2); null = flat volume. */
+  env: { t: number; g: number }[] | null;
   muted: boolean;
   color: string;
 }

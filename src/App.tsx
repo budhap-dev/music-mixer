@@ -259,7 +259,7 @@ export default function App() {
 
   // structural edits (cuts, moves, speed/pitch, add/remove, enhance) rebuild mid-play
   const structSig =
-    JSON.stringify(state.clips.map((c) => [c.fileId, c.start, c.end, c.offset, c.speed, c.pitch])) +
+    JSON.stringify(state.clips.map((c) => [c.fileId, c.start, c.end, c.offset, c.speed, c.pitch, c.env])) +
     state.master.enhance + procTick;
   useEffect(() => {
     if (!engine.playing) return;

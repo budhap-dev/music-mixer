@@ -1,6 +1,7 @@
 import type { Clip, Master } from "../types";
 import { getBuffer } from "./files";
 import { getProcessed, needsProcessing } from "./process";
+import { envGainAt } from "./envelope";
 
 export interface MixGraph {
   sources: AudioBufferSourceNode[];
@@ -54,7 +55,22 @@ export function buildMixGraph(
     const len = (clip.end - clip.start) / clip.speed; // output-domain length
     if (from >= clip.offset + len) continue;
     const gain = new GainNode(ctx, { gain: clip.muted ? 0 : clip.gain });
-    gain.connect(bass);
+    // volume automation: a separate node follows the envelope polyline, so the
+    // manual volume (gain above) stays live-adjustable independently
+    if (clip.env?.length) {
+      const auto = new GainNode(ctx);
+      gain.connect(auto);
+      auto.connect(bass);
+      const pts = [...clip.env].sort((a, b) => a.t - b.t);
+      const srcAtFrom = clip.start + Math.max(0, from - clip.offset) * clip.speed;
+      auto.gain.setValueAtTime(envGainAt(pts, srcAtFrom), startTime);
+      for (const p of pts) {
+        const ct = startTime + (clip.offset + (p.t - clip.start) / clip.speed - from);
+        if (ct > startTime) auto.gain.linearRampToValueAtTime(p.g, ct);
+      }
+    } else {
+      gain.connect(bass);
+    }
     const skip = Math.max(0, from - clip.offset); // output-domain, into the clip
     const when = startTime + Math.max(0, clip.offset - from);
     const src = processed
